@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>전주솔내고 도서관 길찾기 시스템 (AI·SW)</title>
+    <style>
+        body { font-family: 'Malgun Gothic', sans-serif; background: #f0f2f5; margin: 0; padding: 20px; text-align: center; }
+        .container { max-width: 950px; background: white; margin: 0 auto; padding: 20px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        h1 { color: #1e3a8a; font-size: 24px; margin-bottom: 5px; }
+        .subtitle { color: #6b7280; font-size: 14px; margin-bottom: 20px; }
+        
+        /* 📊 데이터 연동 섹션 디자인 */
+        .excel-connect-box { background: #f0fdf4; border: 2px dashed #22c55e; padding: 15px; border-radius: 8px; max-width: 600px; margin: 0 auto 20px auto; font-size: 13px; color: #166534; }
+        .excel-connect-box input[type="file"] { margin-top: 8px; font-size: 13px; }
+        .data-status { font-weight: bold; margin-top: 5px; color: #15803d; }
+
+        /* 🔍 검색창 레이아웃 */
+        .search-container { position: relative; max-width: 600px; margin: 0 auto 20px auto; }
+        .search-box { display: flex; gap: 10px; }
+        input[type="text"] { flex: 1; padding: 12px; border: 2px solid #ddd; border-radius: 8px; font-size: 14px; outline: none; }
+        input[type="text"]:focus { border-color: #1e3a8a; }
+        button { padding: 12px 25px; background: #1e3a8a; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; }
+        button:hover { background: #1d4ed8; }
+        
+        /* 실시간 검색 추천 리스트 */
+        .suggestions { 
+            position: absolute; top: 100%; left: 0; right: 95px; 
+            background: white; border: 1px solid #ddd; border-top: none; 
+            border-radius: 0 0 8px 8px; max-height: 200px; overflow-y: auto; 
+            z-index: 10; text-align: left; display: none; box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+        }
+        .suggestion-item { padding: 10px 15px; cursor: pointer; font-size: 13px; border-bottom: 1px solid #f3f4f6; }
+        .suggestion-item:hover { background: #f3f4f6; color: #1e3a8a; font-weight: bold; }
+        
+        /* 🗺️ 도면 배경 레이아웃 */
+        .map-container {
+            position: relative;
+            width: 900px;
+            height: 600px;
+            margin: 0 auto;
+            background-image: url('blueprint.jpg'); 
+            background-size: 100% 100%;
+            background-repeat: no-repeat;
+            border: 3px solid #1e3a8a;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        /* 🏁 격자 그리드 */
+        .map-grid {
+            display: grid;
+            grid-template-columns: repeat(60, 1fr);
+            grid-template-rows: repeat(40, 1fr);
+            width: 100%;
+            height: 100%;
+            position: absolute;
+            top: 0; left: 0;
+        }
+
+        .cell {
+            border: 1px dashed rgba(0, 0, 0, 0.02); 
+            box-sizing: border-box;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 7px;
+            font-weight: bold;
+            color: transparent; 
+            transition: all 0.1s;
+        }
+        .cell:hover { background: rgba(0, 0, 0, 0.25); color: #fff; font-size: 8px; }
+
+        /* 📍 레이어 디자인 */
+        .cell.entrance { background: rgba(3, 105, 161, 0.95) !important; color: white !important; font-size: 11px; font-weight: bold; } 
+        .cell.wall { background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.05); } 
+        .cell.shelf { background: transparent; } 
+        
+        /* ⭐ 서가 칸 하이라이트 */
+        .cell.shelf-highlight { background: rgba(253, 224, 71, 0.7) !important; color: #1e3a8a !important; font-size: 14px !important; font-weight: bold; animation: pulse 0.6s infinite alternate; }
+
+        .cell.path { background: rgba(34, 197, 94, 0.85) !important; color: white !important; font-size: 11px; animation: pop 0.1s ease-out; } 
+        .cell.target { background: rgba(220, 38, 38, 0.95) !important; color: white !important; font-size: 11px; font-weight: bold; animation: pulse 0.8s infinite alternate; } 
+
+        #result-text { font-size: 15px; font-weight: bold; color: #374151; margin-top: 15px; padding: 12px; background: #f3f4f6; border-radius: 6px; text-align: left; line-height: 1.6; }
+
+        /* 🚨 이동식 플로팅 책장 디자인 */
+        .shelf-floating-card {
+            position: fixed;
+            bottom: 25px;
+            right: 25px;
+            width: 270px; /* 오차범위 텍스트 공간 확보를 위해 살짝 늘림 */
+            background: white;
+            padding: 15px;
+            border-radius: 16px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.25);
+            border: 3px solid #334155;
+            z-index: 9999;
+            display: none; 
+            text-align: center;
+            animation: slideIn 0.3s ease-out;
+        }
+        
+        /* 드래그용 헤더 바 */
+        .floating-header {
+            background: #e2e8f0;
+            margin: -15px -15px 12px -15px;
+            padding: 10px 15px;
+            border-radius: 12px 12px 0 0;
+            border-bottom: 2px solid #cbd5e1;
+            cursor: move; 
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .floating-title { font-size: 13px; font-weight: bold; color: #1e3a8a; user-select: none; }
+        .floating-close { font-size: 20px; font-weight: bold; color: #64748b; cursor: pointer; }
+        .floating-close:hover { color: #0f172a; }
+
+        /* 🧱 원목느낌 6층 서가 프레임 */
+        .shelf-structure { background: #78350f; border: 5px solid #451a03; border-radius: 8px; padding: 6px; display: flex; flex-direction: column; gap: 6px; }
+        .shelf-floor { background: #fef3c7; height: 42px; border-bottom: 4px solid #451a03; display: flex; align-items: center; justify-content: center; position: relative; transition: all 0.3s; }
+        .shelf-floor:last-child { border-bottom: none; }
+        .floor-label { position: absolute; left: 8px; bottom: 2px; font-size: 10px; color: #b45309; font-weight: bold; }
+        .floor-status { font-size: 12px; font-weight: bold; color: #78350f; }
+
+        /* 🟢 [유진 아이디어] 목표 층수 초록색 하이라이트! */
+        .shelf-floor.active { background: #22c55e !important; border: 2px solid #16a34a; box-shadow: inset 0 0 8px #22c55e; }
+        .shelf-floor.active .floor-status { color: #ffffff !important; font-size: 13px; font-weight: 900; }
+        .shelf-floor.active .floor-label { color: #ffffff !important; }
+
+        /* 🟠 [유진 아이디어] 위아래 인접 오차범위 층 주황색 하이라이트! */
+        .shelf-floor.caution { background: #f97316 !important; border: 2px solid #ea580c; box-shadow: inset 0 0 6px #f97316; }
+        .shelf-floor.caution .floor-status { color: #ffffff !important; font-size: 12px; font-weight: bold; }
+        .shelf-floor.caution .floor-label { color: #ffffff !important; }
+
+        @keyframes pulse { from { transform: scale(1); } to { transform: scale(1.08); } }
+        @keyframes pop { from { transform: scale(0.5); } to { transform: scale(1); } }
+        @keyframes slideIn { from { transform: translateY(50px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>📚 전주솔내고 도서관 공간좌표 길찾기 시스템</h1>
+    <div class="subtitle">팀명: 이게되네 | 트랙: AI·SW</div>
+    
+    <div class="excel-connect-box">
+        💡 <b>[스프레드시트 데이터 연동]</b> 세부 칼럼이 정렬된 구글 시트/엑셀의 <b>CSV 파일</b>을 등록해 주세요!<br>
+        <input type="file" id="csv-file-input" accept=".csv" onchange="handleCSVUpload()">
+        <div class="data-status" id="data-status-text">현재 상태: 파일 업로드 대기 중 (기본 데이터 작동 가능)</div>
+    </div>
+
+    <div class="search-container">
+        <div class="search-box">
+            <input type="text" id="book-search" placeholder="도서명, 저자, 또는 청구기호를 입력하세요..." oninput="searchBooks()">
+            <button onclick="startNavigation()">길찾기</button>
+        </div>
+        <div class="suggestions" id="suggestion-box"></div>
+    </div>
+
+    <div class="map-container">
+        <div class="map-grid" id="library-map"></div>
+    </div>
+    
+    <div id="result-text">💡 파일을 업로드하면 유진이가 직접 실사 조사한 500번대 서가별 매칭 정보 및 6개 층 오차 보정 알고리즘이 실시간 적용됩니다.</div>
+</div>
+
+<div class="shelf-floating-card" id="shelf-floating-box">
+    <div class="floating-header" id="floating-drag-handle">
+        <span class="floating-title" id="floating-card-title">🧱 AI 서가 예측 가이드</span>
+        <span class="floating-close" onclick="closeShelfCard()">&times;</span>
+    </div>
+    <div class="shelf-structure">
+        <div class="shelf-floor" id="floor-6"><span class="floor-label">6층</span><span class="floor-status">-</span></div>
+        <div class="shelf-floor" id="floor-5"><span class="floor-label">5층</span><span class="floor-status">-</span></div>
+        <div class="shelf-floor" id="floor-4"><span class="floor-label">4층</span><span class="floor-status">-</span></div>
+        <div class="shelf-floor" id="floor-3"><span class="floor-label">3층</span><span class="floor-status">-</span></div>
+        <div class="shelf-floor" id="floor-2"><span class="floor-label">2층</span><span class="floor-status">-</span></div>
+        <div class="shelf-floor" id="floor-1"><span class="floor-label">1층</span><span class="floor-status">-</span></div>
+    </div>
+</div>
+
+<script>
+    const ROWS = 40;
+    const COLS = 60;
+    const START = [29, 8]; 
+
+    // 유진이가 보내준 실제 데이터 기반 데이터베이스 동기화
+    let BOOK_DATABASE = [
+        { title: "우리는 지금 미래를 걷고 있습니다", author: "김상균", code: "500 김74ㅇ" },
+        { title: "의식의 강", author: "올리버 색스", code: "511.16 색74ㅇ" },
+        { title: "석세스 에이징", author: "대니얼 J. 레비틴", code: "511.18 레82ㅅ" },
+        { title: "거울 뉴런 이야기", author: "자코모 리졸라티", code: "511.162 리94ㄱ" },
+        { title: "세상을 바꾼 전염병", author: "예병일", code: "513.82 예64ㅅ" },
+        { title: "약의 과학", author: "이동호", code: "518.1 이동ㅇ" },
+        { title: "동의보감", author: "허준", code: "519.1 허78ㄷ" },
+        { title: "기후 에너지 그리고 녹색이야기", author: "환경부", code: "539.1 환78ㄱ" },
+        { title: "로봇 다빈치 꿈을 설계하다", author: "데니스 홍", code: "550.1 홍66ㄹ" },
+        { title: "맛있는 요리에는 과학이 있다", author: "최낙언", code: "594.5 최74ㅁ" },
+        { title: "지랄발랄 하은맘의 불량육아", author: "김선미", code: "598.1 김74ㅈ" },
+        { title: "못참는 아이 욱하는 부모", author: "오은영", code: "598.16 오66ㅁ" }
+    ];
+
+    let selectedBook = null;
+
+    function handleCSVUpload() {
+        const fileInput = document.getElementById('csv-file-input');
+        const file = fileInput.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            const text = e.target.result;
+            const lines = text.split(/\r?\n/);
+            let tempDB = [];
+
+            for (let i = 1; i < lines.length; i++) {
+                if (!lines[i].trim()) continue;
+                const columns = lines[i].split(',');
+                if (columns.length >= 3) {
+                    tempDB.push({
+                        title: columns[0].replace(/"/g, '').trim(),
+                        author: columns[1].replace(/"/g, '').trim(),
+                        code: columns[2].replace(/"/g, '').trim()
+                    });
+                }
+            }
+
+            if (tempDB.length > 0) {
+                BOOK_DATABASE = tempDB;
+                document.getElementById('data-status-text').innerText = `✅ 연동 성공: 총 ${tempDB.length}권 현장 매칭 시스템 대기 중!`;
+                alert(`🎉 유진이의 청구기호 맵 수집 데이터가 로드되었습니다!`);
+            }
+        };
+        reader.readAsText(file, 'EUC-KR'); 
+    }
+
+    function getMapObject(r, c) {
+        if (r === 25 && c === 10 || r === 26 && c === 10 || r === 27 && c === 11 || r === 28 && c === 11 || r === 29 && c === 11) return 'pass';
+        if (Math.abs(r - START[0]) <= 2 && Math.abs(c - START[1]) <= 2) return 'pass';
+
+        if (c === 13 && r >= 6 && r <= 14) return 'shelf'; 
+        if (c === 15 && r >= 6 && r <= 14) return 'shelf'; 
+        if ((c === 17 || c === 18) && r >= 6 && r <= 14) return 'shelf'; 
+        if (c === 20 && r >= 6 && r <= 14) return 'shelf'; 
+        if (c === 22 && r >= 6 && r <= 14) return 'shelf'; 
+        if (c === 24 && r >= 6 && r <= 14) return 'shelf'; 
+        if (c === 25 && r >= 6 && r <= 14) return 'shelf'; 
+
+        if (r >= 6 && r <= 14 && c >= 27 && c <= 39) return 'shelf'; 
+
+        if (r >= 32 && r <= 39) return 'wall'; 
+        if (c === 43 && r >= 1 && r <= 13) return 'wall'; 
+        if (c === 44 || c === 45 || c === 46) return 'wall'; 
+        let boundaryR = 39 - 0.0718 * Math.pow(c - 24, 2);
+        if (r > boundaryR) return 'wall'; 
+        if (r >= 19 && r <= 25 && c >= 16 && c <= 29) return 'wall'; 
+        if ((r === 27 || r === 28) && (c >= 16 && c <= 30)) return 'wall'; 
+        if (r === 18 && c >= 34 && c <= 40) return 'wall'; 
+        if (c === 34 && r >= 18 && r <= 23) return 'wall'; 
+        if (r === 23 && c >= 31 && c <= 34) return 'wall'; 
+        if (c === 31 && r >= 23 && r <= 30) return 'wall'; 
+        if (c === 11 && r >= 1 && r <= 19) return 'wall';  
+        if (r === 19 && c >= 3 && c <= 11) return 'wall';  
+        if (r <= 0 || r >= 39 || c <= 0 || c >= 59) return 'wall'; 
+
+        return 'empty';
+    }
+
+    function isWall(r, c) {
+        return getMapObject(r, c) === 'shelf' || getMapObject(r, c) === 'wall';
+    }
+
+    // 🧠 [유진이의 실사조사 데이터 집약체] KDC 청구기호 기반 위치 및 고집적 층수 매칭 함수
+    function analyzeBookShelfLocation(codeStr) {
+        const numMatch = codeStr.match(/[0-9.]+/);
+        if (!numMatch) return { target: [10, 23], shelves: [[10, 24]], label: "500번대 일반", floor: 3 };
+        const num = parseFloat(numMatch[0]);
+
+        // 1) 4번째 칸 시작 영역 (500 ~ 511.18)
+        if (num >= 500 && num < 511.18) {
+            let prdFloor = 3;
+            if (num < 510) prdFloor = 6;
+            else if (num >= 510 && num < 510.4) prdFloor = 5;
+            else if (num >= 510.4 && num < 510.75) prdFloor = 4;
+            else prdFloor = 2;
+            return { target: [8, 23], shelves: [[7, 24], [8, 24]], label: "1열 (500~510번대)", floor: prdFloor };
+        }
+        // 2) 5번책장 앞면 2열 영역 (511.18 ~ 518 미만)
+        else if (num >= 511.18 && num < 518) {
+            let prdFloor = 3;
+            if (num <= 511.2) prdFloor = 6;
+            else if (num > 511.2 && num <= 512.5) prdFloor = 5;
+            else if (num > 512.5 && num <= 513.5) prdFloor = 4;
+            else if (num > 513.5 && num <= 515.5) prdFloor = 3;
+            else if (num > 515.5 && num <= 517.0) prdFloor = 2;
+            else prdFloor = 1;
+            return { target: [10, 23], shelves: [[10, 24]], label: "2열 (뇌과학 및 의학 서가)", floor: prdFloor };
+        }
+        // 3) 앞면 3열 영역 (518 ~ 539 미만)
+        else if (num >= 518 && num < 539) {
+            let prdFloor = 3;
+            if (num >= 518 && num < 519.5) prdFloor = 6;
+            else if (num >= 519.5 && num < 522) prdFloor = 5;
+            else if (num >= 522 && num < 525) prdFloor = 4;
+            else if (num >= 525 && num < 530) prdFloor = 3;
+            else if (num >= 530 && num < 535) prdFloor = 2;
+            else prdFloor = 1;
+            return { target: [12, 23], shelves: [[12, 24]], label: "3열 (약학, 동의보감, 조경 및 기초공학)", floor: prdFloor };
+        }
+        // 4) 앞면 4열 영역 (539 ~ 592 미만)
+        else if (num >= 539 && num < 592) {
+            let prdFloor = 3;
+            if (num >= 539 && num < 545) prdFloor = 6;
+            else if (num >= 545 && num < 555) prdFloor = 5;
+            else if (num >= 555 && num < 565) prdFloor = 4;
+            else if (num >= 565 && num < 575) prdFloor = 3;
+            else if (num >= 575 && num < 585) prdFloor = 2;
+            else prdFloor = 1;
+            return { target: [14, 23], shelves: [[14, 24]], label: "4열 앞면 (기후위기, 건축, 로봇공학, 식품)", floor: prdFloor };
+        }
+        // 5) 뒷면 4열 영역 및 생활과학 (592 ~ 595 미만)
+        else if (num >= 592 && num < 595) {
+            let prdFloor = 3;
+            if (num >= 592 && num < 593) prdFloor = 6;
+            else if (num >= 593 && num < 593.8) prdFloor = 4;
+            else if (num >= 593.8 && num < 594.5) prdFloor = 3;
+            else prdFloor = 2;
+            return { target: [14, 26], shelves: [[14, 25]], label: "4열 뒷면 (패션, 다이어트, 요리과학)", floor: prdFloor };
+        }
+        // 6) 뒷면 2열 및 아동/육아 영역 (595 이상 599 이하)
+        else {
+            let prdFloor = 1;
+            if (num >= 595 && num < 597) prdFloor = 3;
+            else if (num >= 597 && num < 598.15) prdFloor = 2;
+            else prdFloor = 1;
+            return { target: [12, 26], shelves: [[12, 25]], label: "2열 뒷면 (가정관리, 불안한뇌, 육아 및 ADHD)", floor: prdFloor };
+        }
+    }
+
+    function searchBooks() {
+        const query = document.getElementById('book-search').value.toLowerCase().trim();
+        const box = document.getElementById('suggestion-box');
+        box.innerHTML = '';
+        if (!query) { box.style.display = 'none'; return; }
+
+        const filtered = BOOK_DATABASE.filter(book => 
+            book.title.toLowerCase().includes(query) || book.code.toLowerCase().includes(query)
+        );
+
+        if (filtered.length === 0) {
+            box.innerHTML = `<div class="suggestion-item" style="color:#9ca3af; cursor:default;">검색 결과 없음</div>`;
+            box.style.display = 'block';
+            return;
+        }
+
+        filtered.forEach(book => {
+            const div = document.createElement('div');
+            div.className = 'suggestion-item';
+            div.innerHTML = `📖 <b>${book.title}</b> - <span style="color:#1d4ed8;">[${book.code}]</span>`;
+            div.onclick = () => selectBookItem(book);
+            box.appendChild(div);
+        });
+        box.style.display = 'block';
+    }
+
+    function selectBookItem(book) {
+        document.getElementById('book-search').value = `${book.title} [${book.code}]`;
+        document.getElementById('suggestion-box').style.display = 'none';
+        selectedBook = book;
+    }
+
+    function openShelfCard(book, predictedFloor) {
+        document.getElementById('floating-card-title').innerHTML = `🧱 서가 높이: <b>${predictedFloor}층 예측</b>`;
+        
+        for (let i = 1; i <= 6; i++) {
+            const el = document.getElementById(`floor-${i}`);
+            el.className = "shelf-floor";
+            el.querySelector('.floor-status').innerText = "-";
+        }
+
+        const upperFloor = predictedFloor + 1;
+        const lowerFloor = predictedFloor - 1;
+
+        if (upperFloor <= 6) {
+            const upEl = document.getElementById(`floor-${upperFloor}`);
+            upEl.className = "shelf-floor caution";
+            upEl.querySelector('.floor-status').innerText = "⚠️ 오차 범위";
+        }
+        if (lowerFloor >= 1) {
+            const lowEl = document.getElementById(`floor-${lowerFloor}`);
+            lowEl.className = "shelf-floor caution";
+            lowEl.querySelector('.floor-status').innerText = "⚠️ 오차 범위";
+        }
+
+        const activeFloor = document.getElementById(`floor-${predictedFloor}`);
+        activeFloor.className = "shelf-floor active";
+        activeFloor.querySelector('.floor-status').innerText = "📍 여기에! ⭐";
+
+        document.getElementById('shelf-floating-box').style.display = 'block';
+    }
+
+    function closeShelfCard() {
+        document.getElementById('shelf-floating-box').style.display = 'none';
+    }
+
+    function drawMap(path = [], target = null, highlightShelves = []) {
+        const mapGrid = document.getElementById('library-map');
+        mapGrid.innerHTML = '';
+
+        for (let r = 0; r < ROWS; r++) {
+            for (let c = 0; c < COLS; c++) {
+                const cell = document.createElement('div');
+                cell.className = 'cell';
+                cell.innerText = `${r},${c}`; 
+                const cellType = getMapObject(r, c);
+
+                if (r === START[0] && c === START[1]) { cell.className = 'cell entrance'; cell.innerText = "🚪"; }
+                else if (cellType === 'shelf') {
+                    const isHighlight = highlightShelves.some(pos => pos[0] === r && pos[1] === c);
+                    if (isHighlight) { cell.className = 'cell shelf-highlight'; cell.innerText = "⭐"; }
+                    else { cell.className = 'cell shelf'; }
+                }
+                else if (cellType === 'wall') { cell.className = 'cell wall'; }
+
+                path.forEach(p => {
+                    if (p[0] === r && p[1] === c && !(r === START[0] && c === START[1])) {
+                        const isHighlight = highlightShelves.some(pos => pos[0] === r && pos[1] === c);
+                        if (!(target && target[0] === r && target[1] === c) && !isHighlight) { cell.className = 'cell path'; cell.innerText = "🐾"; }
+                    }
+                });
+
+                if (target && target[0] === r && target[1] === c) { cell.className = 'cell target'; cell.innerText = "📍"; }
+                mapGrid.appendChild(cell);
+            }
+        }
+    }
+
+    function bfs(start, target) {
+        let queue = [[start]];
+        let visited = Array.from({ length: ROWS }, () => Array(COLS).fill(false));
+        visited[start[0]][start[1]] = true;
+        const dr = [-1, 1, 0, 0]; const dc = [0, 0, -1, 1];
+
+        while (queue.length > 0) {
+            let path = queue.shift(); let current = path[path.length - 1];
+            if (current[0] === target[0] && current[1] === target[1]) return path;
+
+            for (let i = 0; i < 4; i++) {
+                let nr = current[0] + dr[i]; let nc = current[1] + dc[i];
+                if (nr >= 0 && nr < ROWS && nc >= 0 && nc < COLS) {
+                    if (!visited[nr][nc] && !isWall(nr, nc)) { visited[nr][nc] = true; queue.push([...path, [nr, nc]]); }
+                }
+            }
+        }
+        return [start, target];
+    }
+
+    function startNavigation() {
+        const searchInput = document.getElementById('book-search').value.trim();
+        if (!searchInput) return;
+
+        if (!selectedBook || !searchInput.includes(selectedBook.title)) {
+            const matched = BOOK_DATABASE.find(book => searchInput.toLowerCase().includes(book.title.toLowerCase()));
+            if (matched) selectedBook = matched;
+            else selectedBook = { title: searchInput, author: "현장 분석", code: searchInput };
+        }
+
+        const locInfo = analyzeBookShelfLocation(selectedBook.code);
+        const shortestPath = bfs(START, locInfo.target);
+
+        drawMap(shortestPath, locInfo.target, locInfo.shelves);
+
+        // 원래 유진이 가이드 텍스트 형태 유지하되, [청구기호] 전체를 맨 뒤가 아닌 도서 정보 옆에 명확히 표기!
+        document.getElementById('result-text').innerHTML = 
+            `🎯 <b>[솔내고 맞춤형 가이드 알고리즘 결과]</b><br>` +
+            `• <b>도서 정보:</b> "${selectedBook.title}" [청구기호 전체: <b>${selectedBook.code}</b>]<br>` +
+            `• <b>예측 서가 구역:</b> 500번대 기술과학 <b>${locInfo.label}</b><br>` +
+            `• <b>주의 모드(오차 보정) 가동:</b> 목표 층은 <span style="color:#16a34a;"><b>초록색(📍)</b></span>, 오배치 주의 구역은 <span style="color:#ea580c;"><b>주황색(⚠️)</b></span>으로 확장 안내 중입니다.`;
+
+        openShelfCard(selectedBook, locInfo.floor);
+    }
+
+    // 드래그 기능 스크립트
+    const dragCard = document.getElementById('shelf-floating-box');
+    const dragHandle = document.getElementById('floating-drag-handle');
+    let isDragging = false;
+    let offsetX = 0, offsetY = 0;
+
+    dragHandle.addEventListener('mousedown', (e) => {
+        isDragging = true;
+        const rect = dragCard.getBoundingClientRect();
+        dragCard.style.bottom = 'auto'; dragCard.style.right = 'auto';
+        dragCard.style.left = rect.left + 'px'; dragCard.style.top = rect.top + 'px';
+        offsetX = e.clientX - rect.left; offsetY = e.clientY - rect.top;
+    });
+    document.addEventListener('mousemove', (e) => {
+        if (!isDragging) return;
+        dragCard.style.left = (e.clientX - offsetX) + 'px'; dragCard.style.top = (e.clientY - offsetY) + 'px';
+    });
+    document.addEventListener('mouseup', () => { isDragging = false; });
+
+    drawMap();
+</script>
+</body>
+</html>
